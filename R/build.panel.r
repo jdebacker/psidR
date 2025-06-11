@@ -1,18 +1,15 @@
 
 
 #' build.panel: Build PSID panel data set
-#' 
+#'
 #' @description Builds a panel data set with id variables \code{pid} (unique person identifier) and \code{year} from individual PSID family files and supplemental wealth files.
-#' @details 
-#' There are several supported approches. Approach one downloads stata data, uses stata to build each wave, then puts it together with `psidR`. The second (recommended) approach downloads all data directly from the psid servers (no Stata needed). For this approach you need to supply the precise names of psid variables - those variable names vary by year. E.g. \emph{total family income} will have different names in different waves. The function \code{\link{getNamesPSID}} greatly helps collecting names for all waves.
-#' @section Merging:
-#' The variables \code{interview number} in each family file map to 
-#' the \code{interview number} variable of a given year in the individual file. Run \code{example(build.panel)} for a demonstration.  
-#' 
-#' @section Supplements:
-#' \emph{Notice that support for wealth supplements is disabled!} Recent releases of the main family file have wealth data included. Earlier waves must be merged manually, again by variable \code{interview number} as above. 
-
-#' @param datadir either \code{NULL}, in which case saves to tmpdir or path to directory containing family files ("FAMyyyy.RData") and individual file ("IND2009ER.RData").
+#' @details
+#' There are several supported approches. Approach one downloads stata data, uses stata to build each wave, then puts it together with `psidR`. The second (recommended) approach downloads all data directly from the psid servers (no Stata needed. For this approach you need to supply the precise names of psid variables - those variable names vary by year. E.g. \emph{total family income} will have different names in different waves. The function \code{\link{getNamesPSID}} greatly helps collecting names for all waves.
+#' Merge: the variables \code{interview number} in each family file map to
+#' the \code{interview number} variable of a given year in the individual file. Run \code{example(build.panel)} for a demonstration.
+#' For approach one, accepted input data are stata format .dta, .csv files or R data formats .rda and RData. This usage is similar to stata module \code{psiduse}.
+#' Approach two follows the strategy introduced at \url{http://asdfree.com}. In fact, both approaches use the same function \code{save.psid} to download the data, \code{psidR} automates the merge and subsetting proceedure for you.
+#' @param datadir either \code{NULL}, in which case saves to tmpdir or path to directory containing family files ("FAMyyyy.xyz") and individual file ("IND2009ER.xyz") in admissible formats .xyz. Admissible are .dta, .csv, .RData, .rda. Please follow naming convention. Only .dta version <= 12 supported. Recommended usage is to specify \code{datadir}.
 #' @param fam.vars data.frame of variable to retrieve from family files. Can contain see example for required format.
 #' @param ind.vars data.frame of variables to get from individual file. In almost all cases this will be the type of survey weights you want to use. don't include id variables ER30001 and ER30002.
 #' @param current.heads.only logical TRUE if user wants current household heads only. Distinguishes mover outs heads.
@@ -24,78 +21,122 @@
 #' @return
 #' resulting \code{data.table}. the variable \code{pid} is the unique person identifier, constructed from ID1968 and pernum
 #' @export
-#' @examples 
-#' 
+#' @examples
+#' \dontrun{
+#' # ################################################
+#' # Real-world example: not run because takes long.
+#' # Build panel with income, wage, age and education
+#' # optionally: add wealth supplements!
+#' # ################################################
+#'
+#' # The package is installed with a list of variables
+#' # Alternatively, search for names with \code{\link{getNamesPSID}}
+#' # This is the body of function build.psid()
+#' # (so why not call build.psid() and see what happens!)
+#' r = system.file(package="psidR")
+#' if (small){
+#'   f = fread(file.path(r,"psid-lists","famvars-small.txt"))
+#'   i = fread(file.path(r,"psid-lists","indvars-small.txt"))
+#'   if (wealth){
+#'     w = fread(file.path(r,"psid-lists","wealthvars-small.txt"))
+#'   }
+#' } else {
+#'   f = fread(file.path(r,"psid-lists","famvars.txt"))
+#'   i = fread(file.path(r,"psid-lists","indvars.txt"))
+#'   if (wealth){
+#'     w = fread(file.path(r,"psid-lists","wealthvars.txt"))
+#'   }
+#' }
+#' setkey(i,"name")
+#' setkey(f,"name")
+#' if (wealth) setkey(w,"name")
+#' i = dcast(i[,list(year,name,variable)],year~name)
+#' f = dcast(f[,list(year,name,variable)],year~name)
+#' if (wealth) {
+#'   w = dcast(w[,list(year,name,variable)],year~name)
+#'   d = build.panel(datadir="~/datasets/psid/",fam.vars=f,
+#'                  ind.vars=i,wealth.vars=w,SAScii = TRUE,
+#'                  heads.only =TRUE,sample="SRC",verbose=TRUE,
+#'                  design="all")
+#'   save(d,file="~/psid_wealth.RData")
+#' } else {
+#'   d = build.panel(datadir="~/datasets/psid/",fam.vars=f,
+#'                  ind.vars=i,SAScii = TRUE,
+#'                  heads.only =TRUE,sample="SRC",verbose=TRUE,
+#'                  design="all")
+#'   save(d,file="~/psid_no_wealth.RData")
+#' }
+#' }
+#'
 #' # ######################################
-#' # reproducible example on artifical data. 
+#' # reproducible example on artifical data.
 #' # run this with example(build.panel).
 #' # ######################################
-#' 
+#'
 #' ## make reproducible family data sets for 2 years
 #' ## variables are: family income (Money) and age
-#' 
-#' ## Data acquisition step:
+#'
+#' ## Data acquisition step: you download data or
 #' ## run build.panel with sascii=TRUE
-#' 
+#'
 #' # testPSID creates artifical PSID data
 #' td <- testPSID(N=12,N.attr=0)
 #' fam1985 <- data.table::copy(td$famvars1985)
 #' fam1986 <- data.table::copy(td$famvars1986)
-#' IND2019ER <- data.table::copy(td$IND2019ER)
-#' 
+#' IND2009ER <- data.table::copy(td$IND2009ER)
+#'
 #' # create a temporary datadir
 #' my.dir <- tempdir()
 #' #save those in the datadir
 #' # notice different R formats admissible
 #' save(fam1985,file=paste0(my.dir,"/FAM1985ER.rda"))
 #' save(fam1986,file=paste0(my.dir,"/FAM1986ER.RData"))
-#' save(IND2019ER,file=paste0(my.dir,"/IND2019ER.RData"))
-#' 
+#' save(IND2009ER,file=paste0(my.dir,"/IND2009ER.RData"))
+#'
 #' ## end Data acquisition step.
-#' 
+#'
 #' # now define which famvars
 #' famvars <- data.frame(year=c(1985,1986),
 #'                       money=c("Money85","Money86"),
 #'                       age=c("age85","age86"))
-#' 
+#'
 #' # create ind.vars
 #' indvars <- data.frame(year=c(1985,1986),ind.weight=c("ER30497","ER30534"))
-#' 
+#'
 #' # call the builder
 #' # data will contain column "relation.head" holding the relationship code.
-#' 
+#'
 #' d <- build.panel(datadir=my.dir,fam.vars=famvars,
 #'                  ind.vars=indvars,
-#'                  heads.only=FALSE)	
-#' 
+#'                  heads.only=FALSE,verbose=TRUE)
+#'
 #' # see what happens if we drop non-heads
-#' # only the ones who are heads in BOTH years 
+#' # only the ones who are heads in BOTH years
 #' # are present (since design='balanced' by default)
 #' d <- build.panel(datadir=my.dir,fam.vars=famvars,
 #'                  ind.vars=indvars,
-#'                  heads.only=TRUE)	
-#' print(d[order(pid)],nrow=Inf)
-#' 
-#' # change sample design to "all": 
+#'                  heads.only=TRUE,verbose=FALSE)
+#' print(d$data[order(pid)],nrow=Inf)
+#'
+#' # change sample design to "all":
 #' # we'll keep individuals if they are head in one year,
 #' # and drop in the other
 #' d <- build.panel(datadir=my.dir,fam.vars=famvars,
 #'                  ind.vars=indvars,heads.only=TRUE,
-#'                  design="all")	
-#' print(d[order(pid)],nrow=Inf)
-#' 
+#'                  verbose=FALSE,design="all")
+#' print(d$data[order(pid)],nrow=Inf)
+#'
 #' file.remove(paste0(my.dir,"/FAM1985ER.rda"),
 #'             paste0(my.dir,"/FAM1986ER.RData"),
-#'             paste0(my.dir,"/IND2019ER.RData"))
-#' 
+#'             paste0(my.dir,"/IND2009ER.RData"))
+#'
 #' # END psidR example
-#' 
+#'
 #' # #####################################################################
 #' # Please go to https://github.com/floswald/psidR for more example usage
 #' # #####################################################################
-build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,current.heads.only=FALSE,sample=NULL,design="balanced",loglevel=INFO){
-	
-  	flog.threshold(loglevel)
+build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,wealth.vars=NULL,SAScii=FALSE,heads.only=FALSE,current.heads.only=FALSE,sample=NULL,design="balanced",verbose=FALSE){
+
 
 	# locally bind all variables to be used in a data.table
 	# or R CMD CHECK complains.
@@ -115,11 +156,11 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 	    on.exit(options(oldopts)) # code line i + 1
 		options( encoding = "windows-1252" )		# # only macintosh and *nix users need this line
 	}
-	
-	
+
+
 	# sort out data storage: either to tmp or datadir
 	if (is.null(datadir)){
-		datadir <- tempdir()	
+		datadir <- tempdir()
 		datadir <- paste0(datadir,s)
 	} else {
 		if (substr(datadir,nchar(datadir),nchar(datadir))!=s) datadir <- paste0(datadir,s)
@@ -130,7 +171,7 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 	# any.wealth = is.data.frame(wealth1984.vars)
 	any.wealth = FALSE
 	flog.debug("any.wealth? %d",any.wealth)
-	
+
 
 	# data acquisition
 	# ----------------
@@ -139,9 +180,9 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 
 	wlth.down <- TRUE  # initiate to something
 
-	# all psid family files
-	family    <- data.frame(year = c( 1968:1997 , seq( 1999 , 2021 , 2 ) ),file = c( 1056 , 1058:1082 , 1047:1051 , 1040 , 1052 , 1132 , 1139 , 1152  , 1156, 1164 , 1183 , 1187 , 1194, 1205))
-	# family    <- data.frame(year = c( 1968:1997 , seq( 1999 , 2013 , 2 ) ),file = c( 1056 , 1058:1082 , 1047:1051 , 1040 , 1052 , 1132 , 1139 , 1152  , 1156, 1164  ))
+		lf = list.files(datadir)
+
+		wlth.down <- TRUE  # initiate to something
 
 	#subset to the years we want
 	family <- family[family$year %in% years, ]
@@ -153,6 +194,128 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 			families.down[i] <- TRUE
 			flog.info('found %s already downloaded',paste0("FAM" , family[ i , 'year' ], "ER.rda"))
 		}
+
+		if (any.wealth){
+			# if any of 1984, 1989, 1994, 1999, 2001, 2003, 2005, 2007 in years, also download the associated wealth supplement
+			wlth = data.frame(year=c(1984, 1989, 1994, 1999, 2001, 2003, 2005, 2007),file=c(1147,1148,1149,1150,1130,1131,1133,1140))
+			if (verbose){
+				cat("years: \n")
+				print(years)
+				cat("wealth.vars$year: \n")
+				print(wealth.vars$year)
+				cat("wlth: \n")
+				print(wlth)
+			}
+			wlth = wlth[wealth.vars$year %in% years, ]
+
+			if ( nrow(wlth) > 0 ){
+			  wlth.down <- rep(FALSE,nrow(wlth))
+			    for ( i in 1:nrow( wlth )) {
+			      if ((paste0("WEALTH" , wlth[ i , 'year' ], "ER.rda") %in% lf)) {
+			        wlth.down[i] <- TRUE
+			        cat('found ',paste0("WEALTH" , wlth[ i , 'year' ], "ER.rda"), 'already downloaded \n')
+			      } else {
+			        cat('will download as ',paste0("WEALTH" , wlth[ i , 'year' ], "ER.rda"), '\n')
+			      }
+			    }
+  			} else {
+  			  wlth.down = TRUE
+  			  cat('All Wealth files already downloaded. \n')
+
+  			  # saying we already downloaded even if we didn't look for wealth vars.
+  			}
+
+		}
+
+		ind.down <- FALSE
+		# check if datadir contains individual index already
+		if (("IND2015ER.rda" %in% lf)) {
+			#download latest individual index
+			ind.down = TRUE
+		}
+		if (all(all(families.down),ind.down,all(wlth.down))) {
+			cat("everything already downloaded. Build dataset now.\n")
+		} else {
+			cat("Will download missing datasets now:\n")
+			if (!all(families.down)) {
+				cat("will download: \n",family[!families.down,"year"],'\n')
+			}
+			if (!ind.down) {
+				cat("will download: IND2015ER \n")
+			}
+			if (!wlth.down) {
+				cat("will download missing wealth files. \n")
+			}
+
+	    	confirm <- readline("This can take several hours/days to download.\n want to go ahead? give me 'yes' or 'no'.")
+			if (confirm=="yes"){
+
+				ftype <- "Rdata"
+
+				user <- readline("please enter your PSID username: ")
+				pass <- readline("please enter your PSID password: ")
+
+				curl = getCurlHandle()
+				curlSetOpt(cookiejar = 'cookies.txt', followlocation = TRUE, autoreferer = TRUE, curl = curl)
+
+				html <- getURL('http://simba.isr.umich.edu/u/Login.aspx', curl = curl)
+
+				viewstate <- as.character(sub('.*id="__VIEWSTATE" value="([0-9a-zA-Z+/=]*).*', '\\1', html))
+
+				# extract the `eventvalidation` string
+				eventvalidation <-
+					as.character(
+						sub(
+							'.*id="__EVENTVALIDATION" value="([0-9a-zA-Z+/=]*).*' ,
+							'\\1' ,
+							html
+						)
+					)
+
+				# construct a list full of parameters to pass to the umich website
+				params <-
+					list(
+						'ctl00$ContentPlaceHolder1$Login1$UserName'    = user ,
+						'ctl00$ContentPlaceHolder1$Login1$Password'    = pass ,
+						'ctl00$ContentPlaceHolder1$Login1$LoginButton' = 'Log In' ,
+						'__VIEWSTATE'                                  = viewstate ,
+						'__EVENTVALIDATION'                            = eventvalidation
+				    )
+
+				#file number 1053 is always the individual cross year index file
+				#it must always be the last file in this list.
+				#you always want to download that.
+
+				for ( i in 1:nrow( family )) {
+					if (!(paste0("FAM" , family[ i , 'year' ], "ER.rda") %in% lf)) {
+						get.psid( family[ i , 'file' ] ,name= paste0(datadir, "FAM" , family[ i , 'year' ], "ER") , params , curl )
+					}
+				}
+
+        if (any.wealth) {
+  				if (nrow(wlth)>0){
+  				  for ( i in 1:nrow(wlth)){
+  				    if (!(wlth.down[i])){
+  				      get.psid( wlth[ i , 'file' ] ,name= paste0(datadir, "WEALTH" , wlth[ i , 'year' ], "ER") , params , curl )
+  				    }
+  				  }
+  				}
+        }
+
+
+				# check if datadir contains individual index already
+				if (!("IND2015ER.rda" %in% lf)) {
+					#download latest individual index
+					get.psid( 1053 ,name= paste0(datadir, "IND2015ER") , params , curl )
+				}
+
+				cat('finished downloading files to', datadir,'\n')
+				cat('continuing now to build the dataset.\n')
+
+			} else if (confirm=="no") {
+				return(0)
+			}
+		}  # end download data
 	}
 
 	if (any.wealth){
@@ -184,10 +347,10 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		flog.info("Will download missing datasets now")
 		if (!all(families.down)) {
 			flog.info("will download family files: %s",paste(family[!families.down,"year"],collapse=", "))
-		} 
+		}
 		if (!ind.down) {
 			flog.info("will download latest individual index: IND2021ER")
-		} 
+		}
 		if (!wlth.down) {
 			flog.info("will download missing wealth files.")
 		}
@@ -196,10 +359,10 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		if (confirm=="yes"){
 
 			ftype <- "Rdata"
-			
+
 			user <- readline("please enter your PSID username: ")
 			pass <- readline("please enter your PSID password: ")
-			
+
 			curl = getCurlHandle()
 			curlSetOpt(cookiejar = 'cookies.txt', followlocation = TRUE, autoreferer = TRUE, curl = curl)
 
@@ -208,17 +371,17 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 			viewstate <- as.character(sub('.*id="__VIEWSTATE" value="([0-9a-zA-Z+/=]*).*', '\\1', html))
 
 			# extract the `eventvalidation` string
-			eventvalidation <- 
+			eventvalidation <-
 				as.character(
 					sub(
-						'.*id="__EVENTVALIDATION" value="([0-9a-zA-Z+/=]*).*' , 
-						'\\1' , 
+						'.*id="__EVENTVALIDATION" value="([0-9a-zA-Z+/=]*).*' ,
+						'\\1' ,
 						html
 					)
 				)
 
 			# construct a list full of parameters to pass to the umich website
-			params <- 
+			params <-
 				list(
 					'ctl00$ContentPlaceHolder1$Login1$UserName'    = user ,
 					'ctl00$ContentPlaceHolder1$Login1$Password'    = pass ,
@@ -243,7 +406,7 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		      		}
 		    	}
 			}
-			
+
 			# check if datadir contains individual index already
 			if (!("IND2021ER.rda" %in% lf)) {
 				#download latest individual index
@@ -252,7 +415,7 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 
 			flog.info('finished downloading files to %s', datadir)
 			flog.info('continuing now to build the dataset')
-						
+
 		} else if (confirm=="no") {
 			return(0)
 		}
@@ -266,10 +429,28 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 	}
 	if (!(exists("ftype"))) stop("No .rda or .RData files found in directory\n you need to download data first.")
 
-	flog.info('psidR: Loading Family data from .rda files')
-	# familiy data downloaded directly into a dataframe
-	fam.dat  <- paste0(datadir,grep("FAM",l,value=TRUE,ignore.case=TRUE))
-	fam.dat  <- grep(paste(years,collapse="|"),fam.dat,value=TRUE)
+	if (verbose) cat('psidR: Loading Family data\n')
+	if (ftype=="stata"){
+		fam.dat  <- paste0(datadir,grep("FAM",l,value=TRUE,ignore.case=TRUE))
+        fam.dat  <- grep(paste(years,collapse="|"),fam.dat,value=TRUE)
+		tmp <- grep("IND",l,value=TRUE,ignore.case=TRUE)
+		if (length(tmp)>1) {
+		    warning(cat("Warning: you have more than one IND file in your datadir.\nI take the last one:",tail(tmp,1),"\n"))
+			ind.file <- paste0(datadir,tail(tmp,1))	# needs to be updated with next data delivery.
+		} else {
+			ind.file <- paste0(datadir,grep("IND",l,value=TRUE,ignore.case=TRUE))	# needs to be updated with next data delivery.
+		}
+		# TODO
+		# maybe should use
+		# ind      <- read.dta13(file=ind.file)
+		# if version 13?
+		ind      <- read.dta(file=ind.file)
+		ind.dict <- data.frame(code=names(ind),label=attr(ind,"var.labels"))
+		ind      <- data.table(ind)
+	} else if (ftype=="Rdata") {
+		# familiy data downloaded directly into a dataframe
+		fam.dat  <- paste0(datadir,grep("FAM",l,value=TRUE,ignore.case=TRUE))
+		fam.dat  <- grep(paste(years,collapse="|"),fam.dat,value=TRUE)
 
 	# wealth data downloaded directly into a dataframe
 	if (any.wealth){
@@ -277,20 +458,12 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		wlth.dat  <- grep(paste(years,collapse="|"),wlth.dat,value=TRUE)
 	}
 
-	# individual index
-	tmp <- grep("IND",l,value=TRUE,ignore.case=TRUE)
-	if (length(tmp)>1) {
-	    flog.warn("Warning: you have more than one IND file in your datadir. I take the last one:",tail(tmp,1))
-		ind.file <- paste0(datadir,tail(tmp,1))	# needs to be updated with next data delivery.
-	} else {
-		ind.file <- paste0(datadir,grep("IND",l,value=TRUE,ignore.case=TRUE))	# needs to be updated with next data delivery.
+	if (verbose){
+		cat('psidR: loaded individual file:',ind.file,'\n')
+		cat('psidR: total memory load in MB:\n')
+		vvs = ceiling(object.size(ind)/1024^2)
+		print(as.numeric(vvs))
 	}
-	tmp.env  <- new.env()
-	load(file=ind.file,envir=tmp.env)
-	ind      <- get(ls(tmp.env),tmp.env)	# assign loaded dataset a new name
-	setnames(ind,names(ind), sapply(names(ind), toupper))	## convert all column names to uppercase
-	ind      <- data.table(ind)
-	
 
 	flog.info('psidR: loaded individual file: %s',ind.file)
 	vvs = ceiling(object.size(ind)/1024^2)
@@ -306,15 +479,15 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		flog.debug('psidR: here is the list of hardcoded PSID variables')
 		flog.debug('psidR: The merge is based on equal values in ind.interview and fam.interview')
 		flog.debug("ids:",ids,capture=TRUE)
-	
+
 	# convert fam.vars to data.table
 	stopifnot(is.data.frame(fam.vars))
 	fam.vars <- data.table(fam.vars)
-	
+
 	if (!all(c("year") %in% names(fam.vars))){
 	    stop("your fam.vars needs to contain column `year`")
 	}
-	
+
 	nlist = grepl(".year|.variable", names(fam.vars))
 	if (any(nlist)){
 	    flog.error("your `fam.vars` contains illegal names ", names(fam.vars)[nlist], capture = TRUE)
@@ -322,7 +495,7 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 	}
 	fam.vars <- copy(fam.vars[,lapply(.SD,make.char)])
 	setkey(fam.vars,year)
-	
+
 	# convert ind.vars to data.table if not null
 	if (!is.null(ind.vars)){
 		stopifnot(is.data.frame(ind.vars))
@@ -347,6 +520,8 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		wealth1984.vars[,interview := w_ids[wealth1984.vars][,interview]]
 	}
 
+
+
 	# which vars to keep from ind.files?
 	if (!is.null(ind.vars))	stopifnot(is.list(ind.vars))
 
@@ -355,10 +530,12 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 
 	# loop over years
 	for (iy in 1:length(years)){
-		
-		flog.info('psidR: currently working on data for year %d',years[iy])
-		
- 
+
+		if (verbose) {
+			cat('=============================================\n')
+			cat('psidR: currently working on data for year',years[iy],'\n')
+		}
+
    		# keeping only relevant columns from individual file
 		# subset only if requested.
 		curr <- ids[list(years[iy])]
@@ -371,9 +548,9 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		def.subsetter <- c("ER30001","ER30002")	# must keep those in all years
 
 
-		# select required variables from ind 
+		# select required variables from ind
 		# ----------------------------------
-		# the default column order is: 
+		# the default column order is:
 		# "ER30001","ER30002", "current year interview var", "current year sequence number", "current year head indicator"
 		# get a character vector from ind.vars with variable names for this year
 		ind.nas <- NULL
@@ -381,29 +558,15 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 			ind.vars.yr <- ind.vars[list(years[iy]),which(names(ind.vars)!="year"),with=FALSE]
 			flog.debug("ind.vars.yr:",ind.vars.yr,capture=TRUE)
 
-			# issue https://github.com/floswald/psidR/issues/4
-			# ------------------------------------------------
-			# check for NA in ind.vars: these are years when a certain variable isn not available in the individual index file.
-			# adjust for first year (1968) when `sequence` was not available
-			ind.notnas <- NULL
-			if (any(is.na(ind.vars.yr))){
-				ind.nas <- ind.vars.yr[,which(is.na(ind.vars.yr)),with=FALSE]
-				flog.debug("ind.nas:",ind.nas,capture=TRUE)
-			}
-			if (any(!is.na(ind.vars.yr))){
-				ind.notnas <- ind.vars.yr[,which(!is.na(ind.vars.yr)),with=FALSE]
-				flog.debug("ind.notnas:",ind.notnas,capture=TRUE)
-				# browser()
-				yind    <- copy(ind[,c(def.subsetter,c(ind.subsetter,as.character(ind.notnas))),with=FALSE])	
-			} else {
-				yind    <- copy(ind[,c(def.subsetter,c(ind.subsetter)),with=FALSE])	
-			}
-			# add NA columns
-			if (!is.null(ind.nas)){
-			    yind[,(names(ind.nas)) := NA]
-			}
-		} else {
-			yind <- copy(ind[,c(def.subsetter,c(ind.subsetter)),with=FALSE])	
+		# issue https://github.com/floswald/psidR/issues/4
+		# ------------------------------------------------
+		# check for NA in ind.vars: these are years when a certain variable isn not available in the individual index file.
+		# adjust for first year (1968) when `sequence` was not available
+		ind.nas <- subset(ind.vars.yr,select=names(ind.vars.yr)[is.na(ind.vars.yr)])
+		yind    <- copy(ind[,c(def.subsetter,c(ind.subsetter,as.character(subset(ind.vars.yr,select=names(ind.vars.yr)[!is.na(ind.vars.yr)])))),with=FALSE])
+		# add NA columns
+		if (length(ind.nas)>0){
+		    yind[,(names(ind.nas)) := NA]
 		}
 
 		if (years[iy]==1968){
@@ -411,7 +574,8 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		    setcolorder(yind,c(1:3,ncol(yind),4:(ncol(yind)-1)))
 		}
 
-    
+
+
     	# sample selection
     	# ----------------
 
@@ -422,17 +586,17 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
     		if (sample == "SRC"){
 			   n    <- nrow(yind)
 			   yind <- copy(yind[ER30001<3000])	# individuals 1-2999 are from SRC sample
-			   
+
 			   flog.info('full %d sample has %d obs',years[iy],n)
 			   flog.info('you selected %d obs belonging to %s',nrow(yind),sample)
-			   
+
     		} else if (sample == "SEO"){
 			   n    <- nrow(yind)
 			   yind <- copy(yind[ER30001<7000 & ER30001>5000])
-			   
+
 			   flog.info('full %d sample has %d obs',years[iy],n)
 			   flog.info('you selected %d obs belonging to %s',nrow(yind),sample)
-			   
+
     		} else if (sample == "immigrant"){
 			   n    <- nrow(yind)
 			   yind <- copy(yind[ER30001<5000 & ER30001>3000])	# individuals 1-2999 are from SRC sample
@@ -450,7 +614,7 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
     	# --------------------
 
     	# https://github.com/floswald/psidR/issues/2
-		# for current heads only need to subset "relationship to head" AS WELL AS "sequence number" == 1 
+		# for current heads only need to subset "relationship to head" AS WELL AS "sequence number" == 1
 		# otherwise a head who died between last and this wave is still head, so there would be two heads in that family.
 		# https://psidonline.isr.umich.edu/Guide/FAQ.aspx?Type=ALL#150
 		if (current.heads.only) {
@@ -465,9 +629,9 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 			yind[,headyes := NULL]
 		} else if (heads.only){
 			# https://psidonline.isr.umich.edu/Guide/FAQ.aspx?Type=ALL#250
-			# To create a single year Head/Wife file: 
-			# Select individuals with Relationship to Head of "Head" (a code value of 1 for 1968-1982; code 10 from 1983 onward) 
-			# and with values for Sequence Number in the range 1-20. 
+			# To create a single year Head/Wife file:
+			# Select individuals with Relationship to Head of "Head" (a code value of 1 for 1968-1982; code 10 from 1983 onward)
+			# and with values for Sequence Number in the range 1-20.
 		   n    <- nrow(yind)
 		   if (years[iy]==1968){
 		     yind <- yind[,headyes := (yind[,curr[,ind.head],with=FALSE]==curr[,ind.head.num])]
@@ -475,28 +639,28 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		     yind <- yind[,headyes := (yind[,curr[,ind.head],with=FALSE]==curr[,ind.head.num]) & ((yind[,curr[,ind.seq],with=FALSE]> 0) & (yind[,curr[,ind.seq],with=FALSE]< 21))]
 		   }
 		   yind <- copy(yind[headyes==TRUE])
-		   
+
 		   flog.info('dropping non-heads leaves %d obs',nrow(yind))
-		   
+
 		   yind[,headyes := NULL]
 
 		}
 
-		
+
 
 		if (!is.null(ind.nas)){
 		    setnames(yind,c("ID1968","pernum","interview","sequence","relation.head",
 		                  (names(ind.vars)[-1])[-which(names(ind.vars)[-1] %in% names(ind.nas))],
-		                  names(ind.nas)))  
+		                  names(ind.nas)))
 		} else {
 		    setnames(yind,c("ID1968","pernum","interview","sequence","relation.head",
 		                  (names(ind.vars)[-1])))
 		}
-		
+
 		yind[,pid := ID1968*1000 + pernum]	# unique person identifier
 		setkey(yind,interview)
 
-		
+
 		# bring in family files, subset them
 		# ==================================
 
@@ -505,7 +669,7 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 	   	load(file=fam.dat[iy],envir=tmp.env)
 		tmp             <- get(ls(tmp.env),tmp.env)	# assign loaded dataset a new name
 		tmp             <- data.table(tmp)
-		
+
 		vs = ceiling(object.size(tmp)/1024^2)
 		flog.debug('loaded family file: %s',fam.dat[iy])
 		flog.debug('current memory load in MB: %d',vs)
@@ -519,7 +683,7 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 			curvars[[i]] <- tmpnms[i]
 		}
 		setnames(tmp,tolower(names(tmp)))
-	
+
 		curnames <- names(curvars)
 		# current set of variables
 		# caution if there are specified NAs
@@ -537,7 +701,11 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 			setnames(tmp,curnames)
 			setkey(tmp,interview)
 		}
-		
+
+		if (years[iy] == 1996){
+		  print("yes")
+		}
+
 		# merge family and yind
 		m <- copy(tmp[yind])
 		m[,year := years[iy] ]
@@ -549,24 +717,37 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		if (any.wealth){
 			flog.warn("merging of wealth files currently turned off!")
 			# check if there is a wealth file for this year
-			# iw = grep(years[iy],wlth.dat,value=TRUE)
-			# if (length(iw)>0){
-			# 	rm(list=ls(envir=tmp.env),envir=tmp.env)
-			#    	load(file=iw,envir=tmp.env)
-			# 	tmp             <- get(ls(tmp.env),tmp.env)	# assign loaded dataset a new name
-			# 	tmp             <- data.table(tmp)
-			# 	flog.debug("wealth tmp: ",head(tmp),capture=TRUE)
-			
-			# 	# convert all variable names to lower case in both fam.vars and data file
-			# 	curvars <- wealth1984.vars[list(years[iy]),which(names(wealth1984.vars)!="year"),with=FALSE]
-			# 	flog.debug("wealth curvars: ",curvars,capture=TRUE)
-			# 	curvars[,name := tolower(name)]
-			# 	curvars[,variable := tolower(variable)]
-			# 	curvars[,interview := tolower(interview)]
+			iw = grep(years[iy],wlth.dat,value=TRUE)
+			if (length(iw)>0){
+				rm(list=ls(envir=tmp.env),envir=tmp.env)
+			   	load(file=iw,envir=tmp.env)
+				tmp             <- get(ls(tmp.env),tmp.env)	# assign loaded dataset a new name
+				tmp             <- data.table(tmp)
+
+				# convert all variable names to lower case in both fam.vars and data file
+				if (verbose) {
+					print(wealth.vars)
+				}
+				curvars <- wealth.vars[list(years[iy]),which(names(wealth.vars)!="year"),with=FALSE]
+				tmpnms = tolower(as.character(curvars))
+				for (i in 1:length(tmpnms)){
+					curvars[[i]] <- tmpnms[i]
+				}
+				setnames(tmp,tolower(names(tmp)))
+
+				curnames <- names(curvars)
+				# current set of variables
+				codes <- as.character(curvars)
+				tmp   <- copy(tmp[,codes,with=FALSE])
+				setnames(tmp,curnames)
+				setkey(tmp,interview)
+
+				# merge m and wealthfile
+				m <- merge(m,tmp,all.x=TRUE)
 
 			# 	setnames(tmp,tolower(names(tmp)))
 			# 	flog.debug("wealth tmp: ",head(tmp),capture=TRUE)
-			
+
 			# 	# current set of variables
 			# 	codes <- c(curvars[,variable],curvars[,interview][[1]])
 			# 	flog.debug("wealth codes: ",codes,capture=TRUE)
@@ -574,13 +755,13 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 			# 	setnames(tmp,c(curvars[,name],"interview"))
 			# 	flog.debug("wealth tmp: ",head(tmp),capture=TRUE)
 			# 	setkey(tmp,interview)
-				
+
 			# 	# merge m and wealthfile
 			# 	m <- merge(m,tmp,all.x=TRUE)
 
 			# }  # end wealth files
 		}
-	
+
 		# note: a person who does not respond in wave x has an interview number in that wave, but NAs in the family file variables. remove those records.
 		idx <- which(!is.na(unlist(fam.vars[list(years[iy])][,curnames,with=FALSE])))[1]	# index of first non NA variable
 		m[,isna := is.na(m[,curnames[idx],with=FALSE])]
@@ -591,8 +772,8 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 		datas[[iy]] <- copy(m)
 
 
-	}  # end year
-	
+	}
+
 	data2 <- rbindlist(datas,use.names=TRUE,fill=TRUE)	# glue together
 	rm(datas)
 
@@ -626,8 +807,8 @@ build.panel <- function(datadir=NULL,fam.vars,ind.vars=NULL,heads.only=FALSE,cur
 }
 
 #' one year test, no ind file
-#' 
-#' @param dd Data Dictionary location. If NULL, 
+#'
+#' @param dd Data Dictionary location. If NULL,
 #' use temp dir and force download
 #' @export
 #' @returns No return value, called for side effects
@@ -639,8 +820,8 @@ small.test.noind <- function(dd=NULL){
 }
 
 #' one year test, ind file
-#' 
-#' @param dd Data Dictionary location. If NULL, 
+#'
+#' @param dd Data Dictionary location. If NULL,
 #' use temp dir and force download
 #' @export
 #' @returns No return value, called for side effects
@@ -654,8 +835,8 @@ small.test.ind <- function(dd=NULL){
 }
 
 #' three year test, ind file
-#' 
-#' @param dd Data Dictionary location. If NULL, 
+#'
+#' @param dd Data Dictionary location. If NULL,
 #' use temp dir and force download
 #' @export
 #' @returns No return value, called for side effects
@@ -669,7 +850,7 @@ medium.test.ind <- function(dd=NULL){
 }
 
 #' three year test, no ind file
-#' 
+#'
 #' @param dd Data Dictionary location
 #' @export
 #' @returns No return value, called for side effects
@@ -681,8 +862,8 @@ medium.test.noind <- function(dd=NULL){
 }
 
 #' three year test, ind file and one NA variable
-#' 
-#' @param dd Data Dictionary location. If NULL, 
+#'
+#' @param dd Data Dictionary location. If NULL,
 #' use temp dir and force download
 #' @export
 #' @returns No return value, called for side effects
@@ -697,8 +878,8 @@ medium.test.ind.NA <- function(dd=NULL){
 }
 
 #' three year test, ind file and one NA variable and wealth
-#' 
-#' @param dd Data Dictionary location. If NULL, 
+#'
+#' @param dd Data Dictionary location. If NULL,
 #' use temp dir and force download
 #' @export
 #' @returns description No return value, called for side effects
@@ -718,7 +899,7 @@ medium.test.ind.NA.wealth <- function(dd=NULL){
 
 
 #' Build example PSID
-#' 
+#'
 #' @description Builds a panel from the full PSID dataset
 #' @export
 #' @param datadr string of the data directory
@@ -730,18 +911,33 @@ build.psid <- function(datadr="~/datasets/psid/",small=TRUE){
   if (small){
     f = fread(file.path(r,"psid-lists","famvars-small.txt"))
     i = fread(file.path(r,"psid-lists","indvars-small.txt"))
+    if (wealth){
+      w = fread(file.path(r,"psid-lists","wealthvars-small.txt"))
+    }
+
   } else {
     f = fread(file.path(r,"psid-lists","famvars.txt"))
     i = fread(file.path(r,"psid-lists","indvars.txt"))
+    if (wealth){
+      w = fread(file.path(r,"psid-lists","wealthvars.txt"))
+    }
+
   }
   setkey(i,"name")
   setkey(f,"name")
+  if (wealth) setkey(w,"name")
 
-  i = dcast(i[,list(year,name,variable)],year~name, value.var = "variable")
-  f = dcast(f[,list(year,name,variable)],year~name, value.var = "variable")
-  d = build.panel(datadir=datadr,fam.vars=f,ind.vars=i, heads.only = TRUE,sample="SRC",design="all")
-  
-  return(d)
+  i = dcast(i[,list(year,name,variable)],year~name)
+  f = dcast(f[,list(year,name,variable)],year~name)
+  if (wealth) {
+    w = dcast(w[,list(year,name,variable)],year~name)
+    d = build.panel(datadir=datadr,fam.vars=f,ind.vars=i,wealth.vars=w,SAScii = TRUE, heads.only = TRUE,sample="SRC",verbose=TRUE,design="all")
+    save(d,file="~/psid_wealth.RData")
+  } else {
+    d = build.panel(datadir=datadr,fam.vars=f,ind.vars=i,SAScii = TRUE, heads.only = TRUE,sample="SRC",verbose=TRUE,design="all")
+    save(d,file="~/psid_no_wealth.RData")
+  }
+	return(d$data)
 }
 
 
@@ -755,7 +951,7 @@ build.psid <- function(datadr="~/datasets/psid/",small=TRUE){
 #' present.
 #'
 #' This uses the psid.xlsx crosswalk file from UMich, which is
-#' available at http://psidonline.isr.umich.edu/help/xyr/psid.xlsx. In the 
+#' available at http://psidonline.isr.umich.edu/help/xyr/psid.xlsx. In the
 #' example, the package openxlsx's read.xlsx is used to import the crosswalk
 #' file.
 #'
@@ -773,10 +969,10 @@ build.psid <- function(datadr="~/datasets/psid/",small=TRUE){
 #' # read UMich crosswalk from installed file
 #' r = system.file(package="psidR")
 #' cwf = openxlsx::read.xlsx(file.path(r,"psid-lists","psid.xlsx"))
-#' 
+#'
 #' # or download directly
 #' # cwf <- read.xlsx("http://psidonline.isr.umich.edu/help/xyr/psid.xlsx")
-#' 
+#'
 #' # then get names with
 #' getNamesPSID("ER17013", cwf, years = 2001)
 #' getNamesPSID("ER17013", cwf, years = 2003)
@@ -803,4 +999,3 @@ getNamesPSID <- function(aname, cwf, years = NULL,file = NULL){
     }
     od
 }
-
